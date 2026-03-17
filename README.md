@@ -93,7 +93,7 @@ pip install -r requirements.txt
 ### 3. Download model checkpoints
 The trained model weights are hosted separately due to file size limits.
 
-👉 **[Download checkpoints from Google Drive](#)** 
+👉 **[Download checkpoints from Google Drive](https://drive.google.com/drive/folders/1NXd67PUDKJjWKYMK286xrh2Ivh-9JdWI) 
 
 Place them as:
 ```
@@ -136,6 +136,7 @@ After each analysis, visit:
 ```
 http://127.0.0.1:5000/report/<job_id>
 ```
+Or click analyse report button
 
 The report shows:
 - Overall verdict (Real / Fake) with confidence
