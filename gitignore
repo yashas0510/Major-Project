@@ -1,0 +1,55 @@
+# ── Model weights (too large for GitHub) ──────────────────────────────
+checkpoints/
+*.pt
+*.pth
+*.onnx
+
+# ── dlib landmark model (download separately) ─────────────────────────
+*.dat
+*.dat.bz2
+
+# ── User data (generated at runtime) ──────────────────────────────────
+backend/uploads/
+backend/processed/
+uploads/
+processed/
+
+# ── Python cache ───────────────────────────────────────────────────────
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# ── Virtual environments ───────────────────────────────────────────────
+venv/
+env/
+.env
+.venv
+
+# ── GradCAM output folders (generated during training) ────────────────
+GradCAM_*/
+debug_frames/
+
+# ── Database / feature files ───────────────────────────────────────────
+db/
+features/
+models/
+
+# ── OS files ───────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── IDE files ──────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.suo
+*.user
+
+# ── Jupyter ────────────────────────────────────────────────────────────
+.ipynb_checkpoints/
+*.ipynb
+
+# ── Logs ───────────────────────────────────────────────────────────────
+*.log
