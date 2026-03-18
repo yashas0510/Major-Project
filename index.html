@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Deepfake Detector</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:           #0d0d0d;
+      --surface:      #141414;
+      --border:       #232323;
+      --border-hi:    #333;
+      --text:         #e8e8e8;
+      --text-muted:   #666;
+      --text-dim:     #444;
+      --accent:       #e8ff47;
+      --accent-dim:   rgba(232,255,71,0.08);
+      --fake:         #ff4545;
+      --real:         #47ff8a;
+      --uncertain:    #ffaa33;
+      --radius:       6px;
+      --font-mono:    'IBM Plex Mono', monospace;
+      --font-sans:    'IBM Plex Sans', sans-serif;
+    }
+
+    html, body {
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      font-weight: 400;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(255,255,255,0.018) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.018) 1px, transparent 1px);
+      background-size: 48px 48px;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .app {
+      position: relative;
+      z-index: 1;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 48px 16px 64px;
+    }
+
+    header { text-align: center; margin-bottom: 40px; }
+    .logo-tag {
+      display: inline-block;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: var(--text-dim);
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      border: 1px solid var(--border);
+      padding: 4px 10px;
+      border-radius: 2px;
+      margin-bottom: 16px;
+    }
+    header h1 {
+      font-family: var(--font-mono);
+      font-size: clamp(20px, 4vw, 28px);
+      font-weight: 500;
+      color: var(--text);
+      letter-spacing: -0.02em;
+      line-height: 1.2;
+    }
+    header h1 span { color: var(--accent); }
+    header p { margin-top: 8px; font-size: 13px; color: var(--text-muted); font-weight: 300; }
+
+    .card {
+      width: 100%;
+      max-width: 480px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+
+    .tabs {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      border-bottom: 1px solid var(--border);
+    }
+    .tab {
+      padding: 14px;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      background: none;
+      border: none;
+      cursor: pointer;
+      transition: color 0.15s, background 0.15s;
+      border-right: 1px solid var(--border);
+    }
+    .tab:last-child { border-right: none; }
+    .tab.active { color: var(--accent); background: var(--accent-dim); }
+    .tab:hover:not(.active) { color: var(--text); background: rgba(255,255,255,0.03); }
+
+    .panel { padding: 24px; }
+    .panel.hide { display: none; }
+
+    .upload-zone {
+      border: 1px dashed var(--border-hi);
+      border-radius: var(--radius);
+      padding: 32px 20px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+      position: relative;
+    }
+    .upload-zone:hover { border-color: var(--accent); background: var(--accent-dim); }
+    .upload-zone input[type=file] {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      cursor: pointer;
+      width: 100%;
+      height: 100%;
+    }
+    .upload-icon { width: 32px; height: 32px; margin: 0 auto 10px; opacity: 0.3; }
+    .upload-zone p { font-size: 13px; color: var(--text-muted); line-height: 1.5; }
+    .upload-zone .fname {
+      margin-top: 8px;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--accent);
+      word-break: break-all;
+    }
+
+    .btn-analyze {
+      width: 100%;
+      margin-top: 14px;
+      padding: 13px;
+      background: var(--accent);
+      color: #0d0d0d;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      font-weight: 500;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      border: none;
+      border-radius: var(--radius);
+      cursor: pointer;
+      transition: opacity 0.15s, transform 0.1s;
+    }
+    .btn-analyze:hover { opacity: 0.88; }
+    .btn-analyze:active { transform: scale(0.99); }
+    .btn-analyze:disabled { opacity: 0.35; cursor: not-allowed; }
+
+    /* inline error message — replaces browser tooltip */
+    .file-error {
+      display: none;
+      margin-top: 10px;
+      padding: 10px 14px;
+      background: rgba(255,69,69,0.1);
+      border: 1px solid rgba(255,69,69,0.3);
+      border-radius: var(--radius);
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--fake);
+    }
+    .file-error.show { display: block; }
+
+    .preview-wrap {
+      margin-top: 16px;
+      border-radius: var(--radius);
+      overflow: hidden;
+      display: none;
+      background: #0a0a0a;
+      border: 1px solid var(--border);
+      position: relative;
+    }
+    .preview-wrap.show { display: block; }
+    #image-preview { width: 100%; display: block; max-height: 260px; object-fit: cover; }
+    #video-preview { width: 100%; display: block; }
+    #facecanvas { position: absolute; left: 0; top: 0; pointer-events: none; }
+
+    .status-bar {
+      margin-top: 16px;
+      padding: 12px 14px;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      font-family: var(--font-mono);
+      font-size: 12px;
+      color: var(--text-muted);
+      display: none;
+      align-items: center;
+      gap: 8px;
+    }
+    .status-bar.show { display: flex; }
+    .status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text-muted); flex-shrink: 0; }
+    .status-dot.pulse { background: var(--accent); animation: pulse 1.2s ease-in-out infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+    .result-box {
+      margin-top: 16px;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      overflow: hidden;
+      display: none;
+    }
+    .result-box.show { display: block; }
+    .result-header {
+      padding: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--border);
+    }
+    .verdict { font-family: var(--font-mono); font-size: 18px; font-weight: 500; letter-spacing: -0.01em; }
+    .verdict.fake      { color: var(--fake); }
+    .verdict.real      { color: var(--real); }
+    .verdict.uncertain { color: var(--uncertain); }
+    .confidence { font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); }
+
+    .heatmaps { display: flex; gap: 1px; background: var(--border); }
+    .heatmaps img { flex: 1; width: 50%; display: block; object-fit: cover; aspect-ratio: 1; }
+    .heatmaps img:only-child { width: 100%; }
+
+    .btn-report {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      width: calc(100% - 32px);
+      margin: 16px;
+      padding: 11px;
+      background: transparent;
+      color: var(--accent);
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 500;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      border: 1px solid rgba(232,255,71,0.3);
+      border-radius: var(--radius);
+      cursor: pointer;
+      text-decoration: none;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    .btn-report:hover { background: var(--accent-dim); border-color: var(--accent); }
+
+    footer {
+      margin-top: 32px;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: var(--text-dim);
+      letter-spacing: 0.1em;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+<div class="app">
+
+  <header>
+    <div class="logo-tag">v2.0 · XAI enabled</div>
+    <h1>Deepfake<span>.</span>Detector</h1>
+    <p>XceptionNet + LSTM · Grad-CAM · Explainability</p>
+  </header>
+
+  <div class="card">
+    <div class="tabs">
+      <button class="tab active" id="btnImg">Image</button>
+      <button class="tab" id="btnVid">Video</button>
+    </div>
+
+    <!-- Image Panel -->
+    <div class="panel" id="imgPanel">
+      <!-- No 'required' on input — we handle validation ourselves -->
+      <div class="upload-zone" id="imgZone">
+        <svg class="upload-icon" viewBox="0 0 32 32" fill="none">
+          <path d="M16 4v16M9 11l7-7 7 7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M4 24v2a2 2 0 002 2h20a2 2 0 002-2v-2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+        </svg>
+        <p>Drop image or click to browse<br><span style="font-size:11px;color:var(--text-dim)">JPG · JPEG · PNG</span></p>
+        <p class="fname" id="imgFname"></p>
+        <input type="file" accept=".jpg,.jpeg,.png" id="imgin"/>
+      </div>
+      <div class="file-error" id="imgError">Please select an image file before analyzing.</div>
+      <button class="btn-analyze" id="imgBtn">Analyze Image</button>
+
+      <div class="preview-wrap" id="imgPrevWrap">
+        <img id="image-preview" alt="preview"/>
+      </div>
+      <div class="status-bar" id="imgStatus">
+        <div class="status-dot pulse" id="imgDot"></div>
+        <span id="imgStatusText">Processing...</span>
+      </div>
+      <div class="result-box" id="imgResult">
+        <div class="result-header">
+          <span class="verdict" id="imgVerdict">—</span>
+          <span class="confidence" id="imgConf"></span>
+        </div>
+        <div class="heatmaps" id="imgHeatmaps"></div>
+        <a class="btn-report" id="imgReportBtn" href="#" target="_blank">
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+            <rect x="1" y="1" width="10" height="10" rx="1.5" stroke="currentColor" stroke-width="1.2"/>
+            <path d="M3.5 6h5M3.5 4h5M3.5 8h3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+          </svg>
+          View XAI Report
+        </a>
+      </div>
+    </div>
+
+    <!-- Video Panel -->
+    <div class="panel hide" id="vidPanel">
+      <div class="upload-zone" id="vidZone">
+        <svg class="upload-icon" viewBox="0 0 32 32" fill="none">
+          <rect x="2" y="6" width="20" height="20" rx="2" stroke="currentColor" stroke-width="1.5"/>
+          <path d="M22 12l8-4v16l-8-4V12z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+        </svg>
+        <p>Drop video or click to browse<br><span style="font-size:11px;color:var(--text-dim)">MP4 · AVI</span></p>
+        <p class="fname" id="vidFname"></p>
+        <input type="file" accept=".mp4,.avi" id="vidin"/>
+      </div>
+      <div class="file-error" id="vidError">Please select a video file before analyzing.</div>
+      <button class="btn-analyze" id="vidBtn">Analyze Video</button>
+
+      <div class="preview-wrap" id="vidPrevWrap">
+        <video id="video-preview" controls preload="none"></video>
+        <canvas id="facecanvas"></canvas>
+      </div>
+      <div class="status-bar" id="vidStatus">
+        <div class="status-dot pulse" id="vidDot"></div>
+        <span id="vidStatusText">Processing...</span>
+      </div>
+      <div class="result-box" id="vidResult">
+        <div class="result-header">
+          <span class="verdict" id="vidVerdict">—</span>
+          <span class="confidence" id="vidConf"></span>
+        </div>
+        <div class="heatmaps" id="vidHeatmaps"></div>
+        <a class="btn-report" id="vidReportBtn" href="#" target="_blank">
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+            <rect x="1" y="1" width="10" height="10" rx="1.5" stroke="currentColor" stroke-width="1.2"/>
+            <path d="M3.5 6h5M3.5 4h5M3.5 8h3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+          </svg>
+          View XAI Report
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <footer>XceptionNet · LSTM · dlib · InsightFace · Flask</footer>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.10.1/dist/face-api.min.js"></script>
+<script>
+  // ── Tab switching ──────────────────────────────────────────────────────────
+  document.getElementById('btnImg').onclick = () => switchTab('img');
+  document.getElementById('btnVid').onclick = () => switchTab('vid');
+
+  function switchTab(t) {
+    document.getElementById('btnImg').classList.toggle('active', t === 'img');
+    document.getElementById('btnVid').classList.toggle('active', t === 'vid');
+    document.getElementById('imgPanel').classList.toggle('hide', t !== 'img');
+    document.getElementById('vidPanel').classList.toggle('hide', t === 'img');
+  }
+
+  // ── File pick — image ──────────────────────────────────────────────────────
+  document.getElementById('imgin').onchange = function() {
+    const file = this.files[0];
+    if (!file) return;
+    document.getElementById('imgFname').textContent  = file.name;
+    document.getElementById('imgError').classList.remove('show');
+    document.getElementById('image-preview').src = URL.createObjectURL(file);
+    document.getElementById('imgPrevWrap').classList.add('show');
+    // hide old result when a new file is picked
+    document.getElementById('imgResult').classList.remove('show');
+  };
+
+  // ── File pick — video ──────────────────────────────────────────────────────
+  document.getElementById('vidin').onchange = function() {
+    const file = this.files[0];
+    if (!file) return;
+    document.getElementById('vidFname').textContent = file.name;
+    document.getElementById('vidError').classList.remove('show');
+    const vid = document.getElementById('video-preview');
+    vid.src = URL.createObjectURL(file);
+    document.getElementById('vidPrevWrap').classList.add('show');
+    document.getElementById('vidResult').classList.remove('show');
+  };
+
+  // ── Analyze image ──────────────────────────────────────────────────────────
+  document.getElementById('imgBtn').onclick = function() {
+    const file = document.getElementById('imgin').files[0];
+    if (!file) {
+      // show our own clean error instead of browser tooltip
+      document.getElementById('imgError').classList.add('show');
+      return;
+    }
+    document.getElementById('imgError').classList.remove('show');
+    const btn = this;
+    btn.disabled = true;
+    showStatus('img', 'Uploading...');
+    hideResult('img');
+
+    const fd = new FormData();
+    fd.append('file', file);
+    fetch('/upload_image', { method: 'POST', body: fd })
+      .then(r => r.json())
+      .then(r => {
+        if (r.job_id) {
+          showStatus('img', 'Analyzing...');
+          trackJob(r.job_id, 'img', btn);
+        } else {
+          showStatus('img', 'Error: ' + (r.error || 'unknown'));
+          btn.disabled = false;
+        }
+      })
+      .catch(() => { showStatus('img', 'Network error'); btn.disabled = false; });
+  };
+
+  // ── Analyze video ──────────────────────────────────────────────────────────
+  let detectionActive = false, detectAnimId = null;
+
+  document.getElementById('vidBtn').onclick = function() {
+    const file = document.getElementById('vidin').files[0];
+    if (!file) {
+      document.getElementById('vidError').classList.add('show');
+      return;
+    }
+    document.getElementById('vidError').classList.remove('show');
+    const btn = this;
+    btn.disabled = true;
+    showStatus('vid', 'Uploading...');
+    hideResult('vid');
+
+    const vid = document.getElementById('video-preview');
+    vid.currentTime = 0;
+    vid.play();
+    detectionActive = true;
+    detectFacesRealtime();
+
+    const fd = new FormData();
+    fd.append('file', file);
+    fetch('/upload_video', { method: 'POST', body: fd })
+      .then(r => r.json())
+      .then(r => {
+        if (r.job_id) {
+          showStatus('vid', 'Analyzing...');
+          trackJob(r.job_id, 'vid', btn);
+        } else {
+          showStatus('vid', 'Error: ' + (r.error || 'unknown'));
+          btn.disabled = false;
+        }
+      })
+      .catch(() => { showStatus('vid', 'Network error'); btn.disabled = false; });
+  };
+
+  // ── Polling ────────────────────────────────────────────────────────────────
+  function trackJob(jobId, prefix, btn) {
+    function poll() {
+      fetch('/status/' + jobId)
+        .then(r => r.json())
+        .then(res => {
+          if (res.status === 'completed') {
+            hideStatus(prefix);
+            btn.disabled = false;
+
+            // Re-enable file input so user can pick a new file
+            resetFileInput(prefix);
+
+            if (prefix === 'vid') {
+              detectionActive = false;
+              if (detectAnimId) cancelAnimationFrame(detectAnimId);
+              document.getElementById('video-preview').pause();
+              const c = document.getElementById('facecanvas');
+              c.getContext('2d').clearRect(0, 0, c.width, c.height);
+            }
+            showResult(jobId, res.result, prefix);
+          } else {
+            showStatus(prefix, 'Processing...');
+            setTimeout(poll, 1600);
+          }
+        })
+        .catch(() => setTimeout(poll, 2000));
+    }
+    poll();
+  }
+
+  // ── Reset file input after job completes ───────────────────────────────────
+  function resetFileInput(prefix) {
+    const inputId = prefix === 'img' ? 'imgin' : 'vidin';
+    const fnameId = prefix === 'img' ? 'imgFname' : 'vidFname';
+    const input   = document.getElementById(inputId);
+    // Clear the file input value so next click opens picker again
+    input.value = '';
+    document.getElementById(fnameId).textContent = '';
+  }
+
+  // ── Show result ────────────────────────────────────────────────────────────
+  function showResult(jobId, r, prefix) {
+    const verdict   = document.getElementById(prefix + 'Verdict');
+    const conf      = document.getElementById(prefix + 'Conf');
+    const heatmaps  = document.getElementById(prefix + 'Heatmaps');
+    const reportBtn = document.getElementById(prefix + 'ReportBtn');
+    const box       = document.getElementById(prefix + 'Result');
+
+    const pred = r.prediction || 'Unknown';
+    verdict.textContent = pred;
+    verdict.className   = 'verdict ' + (
+      pred === 'Fake'      ? 'fake'      :
+      pred === 'Uncertain' ? 'uncertain' : 'real'
+    );
+    conf.textContent = (r.confidence * 100).toFixed(2) + '% confidence';
+
+    heatmaps.innerHTML = '';
+    if (r.gradcam_1) {
+      const img = document.createElement('img');
+      img.src = '/download/' + jobId + '/' + r.gradcam_1;
+      heatmaps.appendChild(img);
+    }
+    if (r.gradcam_2) {
+      const img = document.createElement('img');
+      img.src = '/download/' + jobId + '/' + r.gradcam_2;
+      heatmaps.appendChild(img);
+    }
+
+    reportBtn.href = '/report/' + jobId;
+    box.classList.add('show');
+  }
+
+  // ── Status helpers ─────────────────────────────────────────────────────────
+  function showStatus(prefix, msg) {
+    const bar  = document.getElementById(prefix + 'Status');
+    const text = document.getElementById(prefix + 'StatusText');
+    document.getElementById(prefix + 'Dot').classList.add('pulse');
+    text.textContent = msg;
+    bar.classList.add('show');
+  }
+  function hideStatus(prefix) {
+    document.getElementById(prefix + 'Status').classList.remove('show');
+  }
+  function hideResult(prefix) {
+    document.getElementById(prefix + 'Result').classList.remove('show');
+  }
+
+  // ── Face detection on video preview ───────────────────────────────────────
+  async function detectFacesRealtime() {
+    if (!detectionActive) return;
+    const vid = document.getElementById('video-preview');
+    if (vid.paused || vid.ended || vid.readyState < 2) {
+      detectAnimId = requestAnimationFrame(detectFacesRealtime);
+      return;
+    }
+    const canvas = document.getElementById('facecanvas');
+    canvas.width  = vid.videoWidth;
+    canvas.height = vid.videoHeight;
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    try {
+      const res = await faceapi.detectAllFaces(vid,
+        new faceapi.TinyFaceDetectorOptions({ inputSize: 160, scoreThreshold: 0.1 }));
+      for (const det of res) {
+        const bb = det.box;
+        ctx.strokeStyle = '#e8ff47';
+        ctx.lineWidth   = 1.5;
+        ctx.strokeRect(bb.x, bb.y, bb.width, bb.height);
+      }
+    } catch(e) {}
+    detectAnimId = requestAnimationFrame(detectFacesRealtime);
+  }
+</script>
+</body>
+</html>
